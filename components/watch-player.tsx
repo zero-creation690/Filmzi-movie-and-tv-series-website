@@ -1,111 +1,178 @@
-// src/components/PlyrVideoPlayer.tsx
+// src/components/WatchPlayer.tsx
 "use client"
+import { useState, useEffect } from "react"
+import { ArrowLeft } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import PlyrVideoPlayer from "./PlyrVideoPlayer"
 
-import { useEffect, useRef, useState } from "react"
-import Plyr from "plyr"
-import "plyr/dist/plyr.css"
-
-interface VideoSource {
-  src: string
-  type: string
-  size?: number
+// Define interfaces for movie/TV data
+interface Movie {
+  id: number
+  title: string
+  thumbnail: string
+  release_date: string
+  language: string
+  video_links: {
+    video_720p?: string
+    video_1080p?: string
+    video_2160p?: string
+  }
 }
 
-interface PlyrPlayerProps {
-  sources?: VideoSource[]
-  poster?: string | null
+interface Episode {
+  episode_number: number
+  episode_name: string
+  video_720p?: string
+  video_1080p?: string
 }
 
-const PlyrVideoPlayer = ({ sources = [], poster = null }: PlyrPlayerProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const playerInstance = useRef<Plyr | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+interface Season {
+  episodes: Episode[]
+}
 
-  const videoSources = sources.length > 0 ? sources : []
+interface TVSeries {
+  id: number
+  title: string
+  thumbnail: string
+  release_date: string
+  language: string
+  seasons: {
+    [key: string]: Season
+  }
+}
+
+interface WatchPlayerProps {
+  movieId: string
+  episode?: string
+  season?: string
+}
+
+export function WatchPlayer({ movieId, episode, season }: WatchPlayerProps) {
+  const [media, setMedia] = useState<Movie | TVSeries | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [videoSources, setVideoSources] = useState<any[]>([])
 
   useEffect(() => {
-    if (!videoRef.current || playerInstance.current) return
+    const fetchMedia = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`, {
+          priority: "high",
+          cache: "force-cache",
+        })
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+        
+        const data = await response.json()
+        setMedia(data)
 
-    setIsLoading(true)
+        let sources = []
+        let mediaItem
+        
+        if (data.type === "tv" && episode && season) {
+          const seasonData = data.seasons?.[`season_${season}`]
+          mediaItem = seasonData?.episodes?.find((ep: Episode) => ep.episode_number === Number.parseInt(episode || ""))
+        } else {
+          mediaItem = data
+        }
 
-    try {
-      playerInstance.current = new Plyr(videoRef.current, {
-        controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "mute",
-          "volume",
-          "settings",
-          "fullscreen",
-        ],
-        settings: ["quality", "speed"],
-        quality: {
-          default: videoSources.find(s => s.size)?.size || undefined,
-          options: videoSources.map(s => s.size).filter(Boolean) as number[],
-        },
-        speed: {
-          selected: 1,
-          options: [0.5, 0.75, 1, 1.25, 1.5, 2],
-        },
-        poster: poster || undefined,
-      })
+        if (mediaItem?.video_links) {
+          if (mediaItem.video_links.video_2160p) sources.push({ src: mediaItem.video_links.video_2160p, type: "video/mp4", size: 2160 })
+          if (mediaItem.video_links.video_1080p) sources.push({ src: mediaItem.video_links.video_1080p, type: "video/mp4", size: 1080 })
+          if (mediaItem.video_links.video_720p) sources.push({ src: mediaItem.video_links.video_720p, type: "video/mp4", size: 720 })
+        } else if (mediaItem?.video_720p || mediaItem?.video_1080p) {
+          if (mediaItem.video_1080p) sources.push({ src: mediaItem.video_1080p, type: "video/mp4", size: 1080 })
+          if (mediaItem.video_720p) sources.push({ src: mediaItem.video_720p, type: "video/mp4", size: 720 })
+        }
 
-      playerInstance.current.on("ready", () => {
-        setIsLoading(false)
-        console.log("Plyr player ready.")
-      })
-      playerInstance.current.on("waiting", () => setIsLoading(true))
-      playerInstance.current.on("playing", () => setIsLoading(false))
-      playerInstance.current.on("error", () => {
-        console.error("Player playback error")
-        setIsLoading(false)
-      })
+        setVideoSources(sources)
+        console.log("Media sources prepared:", sources)
 
-    } catch (error) {
-      console.error("Player initialization error:", error)
-      setIsLoading(false)
+      } catch (error) {
+        console.error("Error fetching media:", error)
+        setMedia(null)
+      } finally {
+        setLoading(false)
+      }
     }
 
-    return () => {
-      playerInstance.current?.destroy()
-      playerInstance.current = null
-    }
-  }, [videoSources, poster])
+    fetchMedia()
+  }, [movieId, episode, season])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-red-500 text-xl animate-pulse">Loading Filmzi Player...</div>
+      </div>
+    )
+  }
+
+  if (!media) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-red-500 text-xl">Content not found</div>
+      </div>
+    )
+  }
+
+  const isTvSeries = "seasons" in media
+  const mediaItem = isTvSeries
+    ? media.seasons?.[`season_${season}`]?.episodes?.find(ep => ep.episode_number === Number.parseInt(episode || ""))
+    : media
+  
+  if (isTvSeries && !mediaItem) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-red-500 text-xl">Episode not found</div>
+      </div>
+    )
+  }
+
+  let mediaTitle = isTvSeries
+    ? `${media.title} - S${season}E${episode}: ${mediaItem?.episode_name}`
+    : media.title
+  let mediaYear = new Date(media.release_date).getFullYear().toString()
+  let mediaLanguage = media.language
+  let mediaThumbnail = media.thumbnail
+  let backLink = isTvSeries ? `/tv-series/${movieId}` : `/movie/${movieId}`
 
   return (
-    <div
-      className="relative w-full bg-black rounded-lg overflow-hidden"
-      style={{ aspectRatio: "16/9" }}
-    >
-      <video
-        ref={videoRef}
-        poster={poster || undefined}
-        playsInline
-        controls={true}
-        className="w-full h-full"
-      >
-        {videoSources.map((source, index) => (
-          <source
-            key={`source-${index}`}
-            src={source.src}
-            type={source.type}
-            size={source.size}
-          />
-        ))}
-      </video>
-
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
-          <div className="flex flex-col items-center">
-            <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <span className="text-red-400 font-medium">Loading...</span>
+    <div className="w-full min-h-screen bg-black">
+      <div className="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 sm:p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4 sm:space-x-6">
+            <Link href={backLink}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-red-600/20 border border-red-600/30 transition-all duration-200"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Back to Details</span>
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-white text-lg sm:text-2xl font-bold tracking-wide line-clamp-1">{mediaTitle}</h1>
+              <div className="flex items-center space-x-2 sm:space-x-3 mt-1">
+                <span className="text-red-400 text-xs sm:text-sm font-medium">{mediaYear}</span>
+                <span className="text-white/60 hidden sm:inline">•</span>
+                <span className="text-white/80 text-xs sm:text-sm uppercase tracking-wider hidden sm:inline">
+                  {mediaLanguage}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      )}
+      </div>
+
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="relative w-full aspect-video max-w-5xl mx-auto">
+          <PlyrVideoPlayer
+            sources={videoSources}
+            poster={mediaThumbnail}
+          />
+        </div>
+      </div>
     </div>
   )
 }
-
-export default PlyrVideoPlayer
