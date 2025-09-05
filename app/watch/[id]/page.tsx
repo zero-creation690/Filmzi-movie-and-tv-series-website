@@ -19,13 +19,15 @@ export const metadata: Metadata = {
 
 export default function WatchPage({ params, searchParams }: WatchPageProps) {
   return (
-    <div className="min-h-screen bg-black">
-      <WatchPlayer
-        movieId={params.id}
-        preferredQuality={searchParams.quality}
-        episode={searchParams.episode}
-        season={searchParams.season}
-      />
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="w-full max-w-7xl mx-auto">
+        <WatchPlayer
+          movieId={params.id}
+          preferredQuality={searchParams.quality}
+          episode={searchParams.episode}
+          season={searchParams.season}
+        />
+      </div>
     </div>
   )
 }

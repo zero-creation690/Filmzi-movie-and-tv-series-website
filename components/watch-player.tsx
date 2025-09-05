@@ -85,6 +85,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   const [currentQuality, setCurrentQuality] = useState<string>("")
   const [availableQualities, setAvailableQualities] = useState<string[]>([])
   const [plyrInstance, setPlyrInstance] = useState<PlyrInstance | null>(null)
+  const [showPoster, setShowPoster] = useState(true)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const getCurrentVideoSrc = (quality?: string) => {
@@ -255,14 +256,21 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         autopause: false,
         hideControls: true,
         resetOnEnd: false,
+        clickToPlay: true,
+        keyboard: { focused: true, global: false },
       })
 
       if (qualitySources.length > 0) {
         player.source = {
           type: "video",
           sources: qualitySources,
+          poster: mediaThumbnail,
         }
       }
+
+      player.on("play", () => {
+        setShowPoster(false)
+      })
 
       player.on("ready", () => {
         console.log("[v0] Plyr player ready with source:", getCurrentVideoSrc())
@@ -396,10 +404,37 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         </div>
       </div>
 
-      <div className="relative w-full h-screen">
+      {showPoster && mediaThumbnail && (
+        <div
+          className="absolute inset-0 z-40 bg-black flex items-center justify-center cursor-pointer"
+          onClick={() => {
+            if (plyrInstance) {
+              plyrInstance.play()
+              setShowPoster(false)
+            }
+          }}
+        >
+          <div className="relative">
+            <img
+              src={mediaThumbnail || "/placeholder.svg"}
+              alt={mediaTitle}
+              className="w-full h-auto max-w-md rounded-lg shadow-2xl"
+            />
+            <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
+              <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center shadow-lg hover:bg-red-700 transition-colors">
+                <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="relative w-full aspect-video max-w-6xl mx-auto">
         <video
           ref={videoRef}
-          className="w-full h-full"
+          className="w-full h-full rounded-lg"
           poster={mediaThumbnail}
           crossOrigin="anonymous"
           playsInline
@@ -419,6 +454,8 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         
         .plyr--video {
           background: #000000;
+          border-radius: 8px;
+          overflow: hidden;
         }
         
         .plyr__controls {
@@ -429,10 +466,17 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         .plyr__control--overlaid {
           background: rgba(220, 38, 38, 0.8);
           border: 2px solid rgba(220, 38, 38, 0.5);
+          width: 80px;
+          height: 80px;
         }
         
         .plyr__control--overlaid:hover {
           background: rgba(220, 38, 38, 1);
+        }
+        
+        .plyr__control--overlaid svg {
+          width: 32px;
+          height: 32px;
         }
         
         .plyr__menu__container {
