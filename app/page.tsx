@@ -8,7 +8,9 @@ import { SearchBar } from "@/components/search-bar"
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
-      <SearchBar />
+      <div className="block md:hidden">
+        <SearchBar />
+      </div>
       <HeroSection />
       <LatestMovies />
       <LatestTvSeries />

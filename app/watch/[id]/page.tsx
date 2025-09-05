@@ -19,8 +19,8 @@ export const metadata: Metadata = {
 
 export default function WatchPage({ params, searchParams }: WatchPageProps) {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <div className="w-full max-w-7xl mx-auto">
+    <div className="min-h-screen bg-black flex items-center justify-center p-4">
+      <div className="w-full max-w-6xl mx-auto">
         <WatchPlayer
           movieId={params.id}
           preferredQuality={searchParams.quality}

@@ -102,7 +102,10 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     const fetchMedia = async () => {
       try {
         console.log("[v0] Fetching media data for ID:", movieId)
-        const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`)
+        const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`, {
+          priority: "high",
+          cache: "force-cache",
+        })
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
@@ -169,18 +172,21 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     const loadPlyr = async () => {
       if (typeof window === "undefined" || !currentQuality || availableQualities.length === 0) return
 
-      // Load Plyr CSS
       if (!document.querySelector('link[href*="plyr"]')) {
         const link = document.createElement("link")
-        link.rel = "stylesheet"
+        link.rel = "preload"
+        link.as = "style"
         link.href = "https://cdn.plyr.io/3.7.8/plyr.css"
+        link.onload = () => {
+          link.rel = "stylesheet"
+        }
         document.head.appendChild(link)
       }
 
-      // Load Plyr JS
       if (!window.Plyr) {
         const script = document.createElement("script")
         script.src = "https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"
+        script.async = true
         script.onload = () => {
           initializePlyr()
         }
@@ -198,17 +204,6 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       }
 
       console.log("[v0] Initializing Plyr with quality:", currentQuality)
-      console.log("[v0] Available qualities:", availableQualities)
-
-      const qualitySources = availableQualities.map((quality) => {
-        const src = getCurrentVideoSrc(quality)
-        console.log("[v0] Quality source:", quality, "->", src)
-        return {
-          src: src,
-          type: "video/mp4",
-          size: Number.parseInt(quality.replace("p", "")),
-        }
-      })
 
       const player = new window.Plyr(videoRef.current, {
         controls: [
@@ -234,6 +229,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
               setCurrentQuality(newQualityStr)
               const newSrc = getCurrentVideoSrc(newQualityStr)
               if (newSrc) {
+                const currentTime = player.currentTime
                 player.source = {
                   type: "video",
                   sources: [
@@ -244,6 +240,9 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
                     },
                   ],
                 }
+                player.once("canplay", () => {
+                  player.currentTime = currentTime
+                })
               }
             }
           },
@@ -252,7 +251,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           selected: 1,
           options: [0.5, 0.75, 1, 1.25, 1.5, 2],
         },
-        preload: "metadata",
+        preload: "auto",
         autopause: false,
         hideControls: true,
         resetOnEnd: false,
@@ -260,10 +259,17 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         keyboard: { focused: true, global: false },
       })
 
-      if (qualitySources.length > 0) {
+      const initialSrc = getCurrentVideoSrc()
+      if (initialSrc) {
         player.source = {
           type: "video",
-          sources: qualitySources,
+          sources: [
+            {
+              src: initialSrc,
+              type: "video/mp4",
+              size: Number.parseInt(currentQuality.replace("p", "")),
+            },
+          ],
           poster: mediaThumbnail,
         }
       }
@@ -374,7 +380,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="w-full">
       <div className="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4 sm:space-x-6">
@@ -431,19 +437,21 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         </div>
       )}
 
-      <div className="relative w-full aspect-video max-w-6xl mx-auto">
-        <video
-          ref={videoRef}
-          className="w-full h-full rounded-lg"
-          poster={mediaThumbnail}
-          crossOrigin="anonymous"
-          playsInline
-          preload="metadata"
-          controls={false}
-        >
-          <source src={currentVideoSrc} type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="relative w-full aspect-video max-w-5xl mx-auto">
+          <video
+            ref={videoRef}
+            className="w-full h-full rounded-lg shadow-2xl"
+            poster={mediaThumbnail}
+            crossOrigin="anonymous"
+            playsInline
+            preload="auto"
+            controls={false}
+          >
+            <source src={currentVideoSrc} type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
       </div>
 
       <style jsx global>{`
