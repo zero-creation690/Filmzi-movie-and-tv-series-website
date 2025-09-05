@@ -6,6 +6,8 @@ import { useState, useEffect, useRef } from "react"
 import { ArrowLeft, Play, Pause, Volume2, VolumeX, Maximize } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import Plyr from "plyr"
+import "plyr/dist/plyr.css"
 
 interface Movie {
   id: number
@@ -82,6 +84,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout>()
+  const playerRef = useRef<Plyr>()
 
   useEffect(() => {
     const fetchMedia = async () => {
@@ -146,16 +149,26 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }, [movieId, preferredQuality, episode, season])
 
   useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
+    if (!videoRef.current) return
+
+    // Initialize Plyr player
+    playerRef.current = new Plyr(videoRef.current, {
+      controls: [],
+      autoplay: false,
+      mute: false,
+      volume: 1,
+      hideControls: true,
+    })
+
+    const player = playerRef.current
 
     const handleLoadedMetadata = () => {
-      setDuration(video.duration)
-      console.log("[v0] Video loaded, duration:", video.duration)
+      setDuration(player.duration)
+      console.log("[v0] Video loaded, duration:", player.duration)
     }
 
     const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime)
+      setCurrentTime(player.currentTime)
     }
 
     const handlePlay = () => {
@@ -169,22 +182,23 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     }
 
     const handleVolumeChange = () => {
-      setVolume(video.volume)
-      setIsMuted(video.muted)
+      setVolume(player.volume)
+      setIsMuted(player.muted)
     }
 
-    video.addEventListener("loadedmetadata", handleLoadedMetadata)
-    video.addEventListener("timeupdate", handleTimeUpdate)
-    video.addEventListener("play", handlePlay)
-    video.addEventListener("pause", handlePause)
-    video.addEventListener("volumechange", handleVolumeChange)
+    player.on("loadedmetadata", handleLoadedMetadata)
+    player.on("timeupdate", handleTimeUpdate)
+    player.on("play", handlePlay)
+    player.on("pause", handlePause)
+    player.on("volumechange", handleVolumeChange)
 
     return () => {
-      video.removeEventListener("loadedmetadata", handleLoadedMetadata)
-      video.removeEventListener("timeupdate", handleTimeUpdate)
-      video.removeEventListener("play", handlePlay)
-      video.removeEventListener("pause", handlePause)
-      video.removeEventListener("volumechange", handleVolumeChange)
+      player.off("loadedmetadata", handleLoadedMetadata)
+      player.off("timeupdate", handleTimeUpdate)
+      player.off("play", handlePlay)
+      player.off("pause", handlePause)
+      player.off("volumechange", handleVolumeChange)
+      player.destroy()
     }
   }, [movie, currentEpisode, currentQuality])
 
@@ -222,46 +236,40 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }, [isPlaying])
 
   const togglePlay = () => {
-    const video = videoRef.current
-    if (!video) return
+    if (!playerRef.current) return
 
     if (isPlaying) {
-      video.pause()
+      playerRef.current.pause()
     } else {
-      video.play()
+      playerRef.current.play()
     }
   }
 
   const toggleMute = () => {
-    const video = videoRef.current
-    if (!video) return
-
-    video.muted = !video.muted
+    if (!playerRef.current) return
+    playerRef.current.muted = !playerRef.current.muted
   }
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const video = videoRef.current
-    if (!video) return
+    if (!playerRef.current) return
 
     const newVolume = Number.parseFloat(e.target.value)
-    video.volume = newVolume
+    playerRef.current.volume = newVolume
     setVolume(newVolume)
   }
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const video = videoRef.current
-    if (!video) return
+    if (!playerRef.current) return
 
     const newTime = (Number.parseFloat(e.target.value) / 100) * duration
-    video.currentTime = newTime
+    playerRef.current.currentTime = newTime
   }
 
   const changeQuality = (quality: string) => {
-    const video = videoRef.current
-    if (!video || currentQuality === quality) return
+    if (!playerRef.current || currentQuality === quality) return
 
-    const currentTimeBackup = video.currentTime
-    const wasPlaying = !video.paused
+    const currentTimeBackup = playerRef.current.currentTime
+    const wasPlaying = !playerRef.current.paused
 
     console.log("[v0] Changing quality to:", quality)
     setCurrentQuality(quality)
@@ -273,34 +281,32 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       newSrc = movie.video_links[`video_${quality}` as keyof typeof movie.video_links] || ""
     }
 
-    if (newSrc) {
-      video.src = newSrc
-      video.load()
+    if (newSrc && videoRef.current) {
+      // Update the video source
+      videoRef.current.src = newSrc
+      
+      // Reload the player with the new source
+      playerRef.current.source = {
+        type: 'video',
+        sources: [{
+          src: newSrc,
+          type: 'video/mp4'
+        }]
+      }
 
-      video.addEventListener(
-        "loadedmetadata",
-        () => {
-          video.currentTime = currentTimeBackup
-          if (wasPlaying) {
-            video.play()
-          }
-        },
-        { once: true },
-      )
+      // Restore playback state
+      playerRef.current.once('loadedmetadata', () => {
+        playerRef.current!.currentTime = currentTimeBackup
+        if (wasPlaying) {
+          playerRef.current!.play()
+        }
+      })
     }
   }
 
   const toggleFullscreen = () => {
-    const container = containerRef.current
-    if (!container) return
-
-    if (!document.fullscreenElement) {
-      container.requestFullscreen()
-      setIsFullscreen(true)
-    } else {
-      document.exitFullscreen()
-      setIsFullscreen(false)
-    }
+    if (!playerRef.current) return
+    playerRef.current.fullscreen.toggle()
   }
 
   const formatTime = (time: number) => {
@@ -364,7 +370,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     >
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className="plyr__video w-full h-full object-contain"
         poster={mediaThumbnail}
         crossOrigin="anonymous"
         playsInline
