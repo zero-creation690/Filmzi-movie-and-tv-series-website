@@ -6,11 +6,11 @@ import Link from "next/link"
 
 interface PlyrInstance {
   source: any
-  quality: number
   destroy: () => void
   play: () => Promise<void>
   pause: () => void
   on: (event: string, callback: (...args: any[]) => void) => void
+  off: (event: string, callback: (...args: any[]) => void) => void
   currentTime: number
 }
 
@@ -88,8 +88,10 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   const [plyrInstance, setPlyrInstance] = useState<PlyrInstance | null>(null)
   const [showPoster, setShowPoster] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
+  const plyrInitialized = useRef(false)
 
   const getCurrentVideoSrc = (quality?: string) => {
     const targetQuality = quality || currentQuality
@@ -184,7 +186,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     }
 
     // Load Plyr JS
-    if (!window.Plyr) {
+    if (!window.Plyr && !plyrInitialized.current) {
       const script = document.createElement("script")
       script.src = "https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"
       script.async = true
@@ -193,7 +195,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         initializePlyr()
       }
       document.head.appendChild(script)
-    } else {
+    } else if (window.Plyr && !plyrInitialized.current) {
       initializePlyr()
     }
 
@@ -211,14 +213,9 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }, [currentQuality, availableQualities, plyrInstance])
 
   const initializePlyr = () => {
-    if (!videoRef.current || !window.Plyr) {
+    if (!videoRef.current || !window.Plyr || plyrInitialized.current) {
       console.error("Video ref or Plyr not available")
       return
-    }
-
-    // Destroy existing instance if any
-    if (plyrInstance) {
-      plyrInstance.destroy()
     }
 
     console.log("[v0] Initializing Plyr with quality:", currentQuality)
@@ -252,21 +249,29 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         selected: 1,
         options: [0.5, 0.75, 1, 1.25, 1.5, 2],
       },
-      autoplay: true,
-      autopause: false,
-      hideControls: true,
+      autoplay: false,
+      autopause: true,
+      hideControls: false,
       resetOnEnd: false,
       clickToPlay: true,
       keyboard: { focused: true, global: false },
     })
 
     player.on("play", () => {
+      console.log("Player playing")
       setShowPoster(false)
+      setIsPlaying(true)
+    })
+
+    player.on("pause", () => {
+      console.log("Player paused")
+      setIsPlaying(false)
     })
 
     player.on("ready", () => {
       console.log("[v0] Plyr player ready")
       setPlyrInstance(player)
+      plyrInitialized.current = true
       updatePlayerSource()
     })
 
@@ -282,7 +287,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }
 
   const updatePlayerSource = () => {
-    if (!plyrInstance) return
+    if (!plyrInstance || !videoRef.current) return
 
     const currentVideoSrc = getCurrentVideoSrc()
     console.log("[v0] Updating player source to:", currentVideoSrc)
@@ -292,8 +297,14 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       return
     }
 
-    const currentTime = plyrInstance.currentTime || 0
+    // Update the video element source directly
+    const sourceElement = videoRef.current.querySelector('source')
+    if (sourceElement) {
+      sourceElement.src = currentVideoSrc
+      videoRef.current.load()
+    }
 
+    // Also update Plyr source
     plyrInstance.source = {
       type: "video",
       sources: [
@@ -305,14 +316,28 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       ],
       poster: mediaThumbnail,
     }
+  }
 
-    plyrInstance.once("loadeddata", () => {
-      plyrInstance.currentTime = currentTime
+  const handlePlayClick = () => {
+    if (plyrInstance) {
       plyrInstance.play().catch((e: any) => {
         console.error("Play error:", e)
-        setError("Failed to play video automatically. Please click play.")
+        // Fallback to direct video play
+        if (videoRef.current) {
+          videoRef.current.play().catch((e: any) => {
+            console.error("Direct play error:", e)
+            setError("Failed to play video. Please try a different quality.")
+          })
+        }
       })
-    })
+      setShowPoster(false)
+    } else if (videoRef.current) {
+      videoRef.current.play().catch((e: any) => {
+        console.error("Direct play error:", e)
+        setError("Failed to play video. Please try a different quality.")
+      })
+      setShowPoster(false)
+    }
   }
 
   let mediaTitle = ""
@@ -431,15 +456,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       {showPoster && mediaThumbnail && (
         <div
           className="absolute inset-0 z-40 bg-black flex items-center justify-center cursor-pointer"
-          onClick={() => {
-            if (plyrInstance) {
-              plyrInstance.play().catch((e: any) => {
-                console.error("Play error:", e)
-                setError("Failed to play video. Please try a different quality.")
-              })
-              setShowPoster(false)
-            }
-          }}
+          onClick={handlePlayClick}
         >
           <div className="relative">
             <img
