@@ -11,6 +11,7 @@ interface PlyrInstance {
   play: () => Promise<void>
   pause: () => void
   on: (event: string, callback: (...args: any[]) => void) => void
+  currentTime: number
 }
 
 declare global {
@@ -86,7 +87,9 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   const [availableQualities, setAvailableQualities] = useState<string[]>([])
   const [plyrInstance, setPlyrInstance] = useState<PlyrInstance | null>(null)
   const [showPoster, setShowPoster] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const playerContainerRef = useRef<HTMLDivElement>(null)
 
   const getCurrentVideoSrc = (quality?: string) => {
     const targetQuality = quality || currentQuality
@@ -139,6 +142,8 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
             }
             console.log("[v0] Selected episode quality:", selectedQuality)
             setCurrentQuality(selectedQuality)
+          } else {
+            setError("Episode not found")
           }
         } else {
           setMovie(data)
@@ -160,6 +165,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         }
       } catch (error) {
         console.error("[v0] Error fetching media:", error)
+        setError("Failed to load media")
       } finally {
         setLoading(false)
       }
@@ -169,141 +175,26 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }, [movieId, preferredQuality, episode, season])
 
   useEffect(() => {
-    const loadPlyr = async () => {
-      if (typeof window === "undefined" || !currentQuality || availableQualities.length === 0) return
+    // Load Plyr CSS
+    if (!document.querySelector('link[href*="plyr"]')) {
+      const link = document.createElement("link")
+      link.rel = "stylesheet"
+      link.href = "https://cdn.plyr.io/3.7.8/plyr.css"
+      document.head.appendChild(link)
+    }
 
-      if (!document.querySelector('link[href*="plyr"]')) {
-        const link = document.createElement("link")
-        link.rel = "preload"
-        link.as = "style"
-        link.href = "https://cdn.plyr.io/3.7.8/plyr.css"
-        link.onload = () => {
-          link.rel = "stylesheet"
-        }
-        document.head.appendChild(link)
-      }
-
-      if (!window.Plyr) {
-        const script = document.createElement("script")
-        script.src = "https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"
-        script.async = true
-        script.onload = () => {
-          initializePlyr()
-        }
-        document.head.appendChild(script)
-      } else {
+    // Load Plyr JS
+    if (!window.Plyr) {
+      const script = document.createElement("script")
+      script.src = "https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"
+      script.async = true
+      script.onload = () => {
+        console.log("Plyr script loaded")
         initializePlyr()
       }
-    }
-
-    const initializePlyr = () => {
-      if (!videoRef.current || !window.Plyr || !currentQuality) return
-
-      if (plyrInstance) {
-        plyrInstance.destroy()
-      }
-
-      console.log("[v0] Initializing Plyr with quality:", currentQuality)
-
-      const player = new window.Plyr(videoRef.current, {
-        controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "settings",
-          "fullscreen",
-        ],
-        settings: ["quality", "speed"],
-        quality: {
-          default: Number.parseInt(currentQuality.replace("p", "")),
-          options: availableQualities.map((q) => Number.parseInt(q.replace("p", ""))),
-          forced: true,
-          onChange: (newQuality: number) => {
-            console.log("[v0] Quality changed to:", newQuality + "p")
-            const newQualityStr = newQuality + "p"
-            if (newQualityStr !== currentQuality) {
-              setCurrentQuality(newQualityStr)
-              const newSrc = getCurrentVideoSrc(newQualityStr)
-              if (newSrc) {
-                const currentTime = player.currentTime
-                player.source = {
-                  type: "video",
-                  sources: [
-                    {
-                      src: newSrc,
-                      type: "video/mp4",
-                      size: newQuality,
-                    },
-                  ],
-                }
-                player.once("canplay", () => {
-                  player.currentTime = currentTime
-                })
-              }
-            }
-          },
-        },
-        speed: {
-          selected: 1,
-          options: [0.5, 0.75, 1, 1.25, 1.5, 2],
-        },
-        preload: "auto",
-        autopause: false,
-        hideControls: true,
-        resetOnEnd: false,
-        clickToPlay: true,
-        keyboard: { focused: true, global: false },
-      })
-
-      const initialSrc = getCurrentVideoSrc()
-      if (initialSrc) {
-        player.source = {
-          type: "video",
-          sources: [
-            {
-              src: initialSrc,
-              type: "video/mp4",
-              size: Number.parseInt(currentQuality.replace("p", "")),
-            },
-          ],
-          poster: mediaThumbnail,
-        }
-      }
-
-      player.on("play", () => {
-        setShowPoster(false)
-      })
-
-      player.on("ready", () => {
-        console.log("[v0] Plyr player ready with source:", getCurrentVideoSrc())
-      })
-
-      player.on("loadstart", () => {
-        console.log("[v0] Video loading started")
-      })
-
-      player.on("canplay", () => {
-        console.log("[v0] Video can start playing")
-      })
-
-      player.on("error", (event: any) => {
-        console.error("[v0] Plyr error:", event)
-        console.error("[v0] Current video source:", getCurrentVideoSrc())
-      })
-
-      player.on("qualitychange", (event: any) => {
-        console.log("[v0] Quality change event:", event)
-      })
-
-      setPlyrInstance(player)
-    }
-
-    if (availableQualities.length > 0 && currentQuality) {
-      loadPlyr()
+      document.head.appendChild(script)
+    } else {
+      initializePlyr()
     }
 
     return () => {
@@ -311,7 +202,118 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         plyrInstance.destroy()
       }
     }
-  }, [availableQualities, currentQuality])
+  }, [])
+
+  useEffect(() => {
+    if (plyrInstance && currentQuality && availableQualities.length > 0) {
+      updatePlayerSource()
+    }
+  }, [currentQuality, availableQualities, plyrInstance])
+
+  const initializePlyr = () => {
+    if (!videoRef.current || !window.Plyr) {
+      console.error("Video ref or Plyr not available")
+      return
+    }
+
+    // Destroy existing instance if any
+    if (plyrInstance) {
+      plyrInstance.destroy()
+    }
+
+    console.log("[v0] Initializing Plyr with quality:", currentQuality)
+
+    const player = new window.Plyr(videoRef.current, {
+      controls: [
+        "play-large",
+        "play",
+        "progress",
+        "current-time",
+        "duration",
+        "mute",
+        "volume",
+        "settings",
+        "fullscreen",
+      ],
+      settings: ["quality", "speed"],
+      quality: {
+        default: Number.parseInt(currentQuality.replace("p", "")),
+        options: availableQualities.map((q) => Number.parseInt(q.replace("p", ""))),
+        forced: true,
+        onChange: (newQuality: number) => {
+          console.log("[v0] Quality changed to:", newQuality + "p")
+          const newQualityStr = newQuality + "p"
+          if (newQualityStr !== currentQuality) {
+            setCurrentQuality(newQualityStr)
+          }
+        },
+      },
+      speed: {
+        selected: 1,
+        options: [0.5, 0.75, 1, 1.25, 1.5, 2],
+      },
+      autoplay: true,
+      autopause: false,
+      hideControls: true,
+      resetOnEnd: false,
+      clickToPlay: true,
+      keyboard: { focused: true, global: false },
+    })
+
+    player.on("play", () => {
+      setShowPoster(false)
+    })
+
+    player.on("ready", () => {
+      console.log("[v0] Plyr player ready")
+      setPlyrInstance(player)
+      updatePlayerSource()
+    })
+
+    player.on("error", (event: any) => {
+      console.error("[v0] Plyr error:", event)
+      console.error("[v0] Current video source:", getCurrentVideoSrc())
+      setError("Failed to play video. Please try a different quality.")
+    })
+
+    player.on("qualitychange", (event: any) => {
+      console.log("[v0] Quality change event:", event)
+    })
+  }
+
+  const updatePlayerSource = () => {
+    if (!plyrInstance) return
+
+    const currentVideoSrc = getCurrentVideoSrc()
+    console.log("[v0] Updating player source to:", currentVideoSrc)
+
+    if (!currentVideoSrc) {
+      setError("Video source not available")
+      return
+    }
+
+    const currentTime = plyrInstance.currentTime || 0
+
+    plyrInstance.source = {
+      type: "video",
+      sources: [
+        {
+          src: currentVideoSrc,
+          type: "video/mp4",
+          size: Number.parseInt(currentQuality.replace("p", "")),
+        },
+      ],
+      poster: mediaThumbnail,
+    }
+
+    plyrInstance.once("loadeddata", () => {
+      plyrInstance.currentTime = currentTime
+      plyrInstance.play().catch((e: any) => {
+        console.error("Play error:", e)
+        setError("Failed to play video automatically. Please click play.")
+      })
+    })
+  }
 
   let mediaTitle = ""
   let mediaYear = ""
@@ -337,6 +339,22 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-red-500 text-xl animate-pulse">Loading Filmzi Player...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-4">{error}</div>
+          <Link href={backLink}>
+            <Button variant="outline" className="border-red-600 text-red-400 hover:bg-red-600/20 bg-transparent">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Details
+            </Button>
+          </Link>
+        </div>
       </div>
     )
   }
@@ -415,7 +433,10 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           className="absolute inset-0 z-40 bg-black flex items-center justify-center cursor-pointer"
           onClick={() => {
             if (plyrInstance) {
-              plyrInstance.play()
+              plyrInstance.play().catch((e: any) => {
+                console.error("Play error:", e)
+                setError("Failed to play video. Please try a different quality.")
+              })
               setShowPoster(false)
             }
           }}
@@ -437,11 +458,11 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         </div>
       )}
 
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div ref={playerContainerRef} className="flex items-center justify-center min-h-[60vh]">
         <div className="relative w-full aspect-video max-w-5xl mx-auto">
           <video
             ref={videoRef}
-            className="w-full h-full rounded-lg shadow-2xl"
+            className="plyr__video w-full h-full rounded-lg shadow-2xl"
             poster={mediaThumbnail}
             crossOrigin="anonymous"
             playsInline
