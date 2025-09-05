@@ -102,6 +102,11 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       try {
         console.log("[v0] Fetching media data for ID:", movieId)
         const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`)
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
         const data = await response.json()
         console.log("[v0] Media data received:", data)
 
@@ -161,7 +166,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
 
   useEffect(() => {
     const loadPlyr = async () => {
-      if (typeof window === "undefined") return
+      if (typeof window === "undefined" || !currentQuality || availableQualities.length === 0) return
 
       // Load Plyr CSS
       if (!document.querySelector('link[href*="plyr"]')) {
@@ -185,17 +190,24 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     }
 
     const initializePlyr = () => {
-      if (!videoRef.current || !window.Plyr) return
+      if (!videoRef.current || !window.Plyr || !currentQuality) return
 
       if (plyrInstance) {
         plyrInstance.destroy()
       }
 
-      const qualityOptions = availableQualities.map((quality) => ({
-        src: getCurrentVideoSrc(quality),
-        type: "video/mp4",
-        size: Number.parseInt(quality.replace("p", "")),
-      }))
+      console.log("[v0] Initializing Plyr with quality:", currentQuality)
+      console.log("[v0] Available qualities:", availableQualities)
+
+      const qualitySources = availableQualities.map((quality) => {
+        const src = getCurrentVideoSrc(quality)
+        console.log("[v0] Quality source:", quality, "->", src)
+        return {
+          src: src,
+          type: "video/mp4",
+          size: Number.parseInt(quality.replace("p", "")),
+        }
+      })
 
       const player = new window.Plyr(videoRef.current, {
         controls: [
@@ -214,36 +226,69 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           default: Number.parseInt(currentQuality.replace("p", "")),
           options: availableQualities.map((q) => Number.parseInt(q.replace("p", ""))),
           forced: true,
-          onChange: (quality: number) => {
-            console.log("[v0] Quality changed to:", quality + "p")
-            setCurrentQuality(quality + "p")
+          onChange: (newQuality: number) => {
+            console.log("[v0] Quality changed to:", newQuality + "p")
+            const newQualityStr = newQuality + "p"
+            if (newQualityStr !== currentQuality) {
+              setCurrentQuality(newQualityStr)
+              const newSrc = getCurrentVideoSrc(newQualityStr)
+              if (newSrc) {
+                player.source = {
+                  type: "video",
+                  sources: [
+                    {
+                      src: newSrc,
+                      type: "video/mp4",
+                      size: newQuality,
+                    },
+                  ],
+                }
+              }
+            }
           },
         },
         speed: {
           selected: 1,
           options: [0.5, 0.75, 1, 1.25, 1.5, 2],
         },
+        preload: "metadata",
+        autopause: false,
+        hideControls: true,
+        resetOnEnd: false,
       })
 
-      if (qualityOptions.length > 0) {
+      if (qualitySources.length > 0) {
         player.source = {
           type: "video",
-          sources: qualityOptions,
+          sources: qualitySources,
         }
       }
 
       player.on("ready", () => {
-        console.log("[v0] Plyr player ready")
+        console.log("[v0] Plyr player ready with source:", getCurrentVideoSrc())
+      })
+
+      player.on("loadstart", () => {
+        console.log("[v0] Video loading started")
+      })
+
+      player.on("canplay", () => {
+        console.log("[v0] Video can start playing")
       })
 
       player.on("error", (event: any) => {
         console.error("[v0] Plyr error:", event)
+        console.error("[v0] Current video source:", getCurrentVideoSrc())
+      })
+
+      player.on("qualitychange", (event: any) => {
+        console.log("[v0] Quality change event:", event)
       })
 
       setPlyrInstance(player)
     }
 
-    if (availableQualities.length > 0) {
+    if (availableQualities.length > 0 && currentQuality) {
       loadPlyr()
     }
 
@@ -299,6 +344,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
   }
 
   const currentVideoSrc = getCurrentVideoSrc()
+  console.log("[v0] Current video source:", currentVideoSrc)
 
   if (!currentVideoSrc || currentVideoSrc.trim() === "") {
     return (
@@ -357,8 +403,10 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           poster={mediaThumbnail}
           crossOrigin="anonymous"
           playsInline
-          src={currentVideoSrc}
+          preload="metadata"
+          controls={false}
         >
+          <source src={currentVideoSrc} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
       </div>
@@ -388,8 +436,22 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         }
         
         .plyr__menu__container {
-          background: rgba(0, 0, 0, 0.9);
+          background: rgba(0, 0, 0, 0.95);
           border: 1px solid rgba(220, 38, 38, 0.3);
+          border-radius: 8px;
+        }
+        
+        .plyr__menu__container .plyr__control {
+          color: white;
+        }
+        
+        .plyr__menu__container .plyr__control:hover {
+          background: rgba(220, 38, 38, 0.2);
+        }
+        
+        .plyr__menu__container .plyr__control[aria-checked="true"] {
+          color: #dc2626;
+          background: rgba(220, 38, 38, 0.1);
         }
         
         .plyr__control[aria-expanded="true"] {
@@ -402,6 +464,12 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         
         .plyr__volume__display {
           color: white;
+        }
+        
+        .plyr__tooltip {
+          background: rgba(0, 0, 0, 0.9);
+          color: white;
+          border: 1px solid rgba(220, 38, 38, 0.3);
         }
       `}</style>
     </div>
