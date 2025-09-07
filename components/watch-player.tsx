@@ -59,15 +59,12 @@ export default function WatchPlayer({ movieId, preferredQuality, episode, season
 
   const getCurrentVideoSrc = (quality?: string) => {
     const q = quality || currentQuality;
-    if (currentEpisode) {
-      return currentEpisode[`video_${q}` as keyof Episode] as string;
-    } else if (movie) {
-      return movie.video_links[`video_${q}` as keyof typeof movie.video_links] || "";
-    }
+    if (currentEpisode) return currentEpisode[`video_${q}` as keyof Episode] as string;
+    if (movie) return movie.video_links[`video_${q}` as keyof typeof movie.video_links] || "";
     return "";
   };
 
-  // Fetch movie or TV episode
+  // Fetch media
   useEffect(() => {
     const fetchMedia = async () => {
       try {
@@ -86,23 +83,18 @@ export default function WatchPlayer({ movieId, preferredQuality, episode, season
           if (episodeData?.video_2160p) qualities.push("2160p");
           setAvailableQualities(qualities);
 
-          setCurrentQuality(
-            preferredQuality && qualities.includes(preferredQuality) ? preferredQuality : qualities.includes("1080p") ? "1080p" : "720p"
-          );
-
+          setCurrentQuality(preferredQuality && qualities.includes(preferredQuality) ? preferredQuality : qualities.includes("1080p") ? "1080p" : "720p");
           setPoster(data.thumbnail);
         } else {
           setMovie(data);
+
           const qualities: string[] = [];
           if (data.video_links?.video_720p) qualities.push("720p");
           if (data.video_links?.video_1080p) qualities.push("1080p");
           if (data.video_links?.video_2160p) qualities.push("2160p");
           setAvailableQualities(qualities);
 
-          setCurrentQuality(
-            preferredQuality && qualities.includes(preferredQuality) ? preferredQuality : qualities.includes("2160p") ? "2160p" : qualities.includes("1080p") ? "1080p" : "720p"
-          );
-
+          setCurrentQuality(preferredQuality && qualities.includes(preferredQuality) ? preferredQuality : qualities.includes("2160p") ? "2160p" : qualities.includes("1080p") ? "1080p" : "720p");
           setPoster(data.thumbnail);
         }
       } catch (err) {
@@ -117,7 +109,6 @@ export default function WatchPlayer({ movieId, preferredQuality, episode, season
   useEffect(() => {
     if (!videoRef.current || !availableQualities.length) return;
 
-    // Destroy previous instance
     if (playerRef.current) {
       playerRef.current.destroy();
       playerRef.current = null;
@@ -151,7 +142,6 @@ export default function WatchPlayer({ movieId, preferredQuality, episode, season
     }
 
     playerRef.current = player;
-
     return () => player.destroy();
   }, [currentQuality, availableQualities, poster, currentEpisode, movie]);
 
