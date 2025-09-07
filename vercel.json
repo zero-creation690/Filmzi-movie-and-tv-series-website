@@ -1,5 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm run build",
-  "framework": "nextjs"
+  "builds": [
+    {
+      "src": "next.config.js",
+      "use": "@vercel/next"
+    }
+  ],
+  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm run build"
 }
