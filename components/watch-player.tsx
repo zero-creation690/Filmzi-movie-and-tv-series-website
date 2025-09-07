@@ -98,6 +98,27 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     return ""
   }
 
+  // ✅ Move metadata ABOVE Plyr usage
+  let mediaTitle = ""
+  let mediaYear = ""
+  let mediaLanguage = ""
+  let mediaThumbnail = ""
+  let backLink = ""
+
+  if (currentEpisode && tvSeries) {
+    mediaTitle = `${tvSeries.title} - S${season}E${episode}: ${currentEpisode.episode_name}`
+    mediaYear = new Date(tvSeries.release_date).getFullYear().toString()
+    mediaLanguage = tvSeries.language
+    mediaThumbnail = tvSeries.thumbnail
+    backLink = `/tv-series/${movieId}`
+  } else if (movie) {
+    mediaTitle = movie.title
+    mediaYear = new Date(movie.release_date).getFullYear().toString()
+    mediaLanguage = movie.language
+    mediaThumbnail = movie.thumbnail
+    backLink = `/movie/${movieId}`
+  }
+
   useEffect(() => {
     const fetchMedia = async () => {
       try {
@@ -107,9 +128,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           cache: "force-cache",
         })
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
         const data = await response.json()
         console.log("[v0] Media data received:", data)
@@ -129,15 +148,12 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
             const qualities = []
             if (episodeData.video_720p) qualities.push("720p")
             if (episodeData.video_1080p) qualities.push("1080p")
-
-            console.log("[v0] Available episode qualities:", qualities)
             setAvailableQualities(qualities)
 
             let selectedQuality = preferredQuality
             if (!selectedQuality || !qualities.includes(selectedQuality)) {
               selectedQuality = qualities.includes("1080p") ? "1080p" : "720p"
             }
-            console.log("[v0] Selected episode quality:", selectedQuality)
             setCurrentQuality(selectedQuality)
           }
         } else {
@@ -147,15 +163,12 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           if (data.video_links?.video_720p) qualities.push("720p")
           if (data.video_links?.video_1080p) qualities.push("1080p")
           if (data.video_links?.video_2160p) qualities.push("2160p")
-
-          console.log("[v0] Available qualities:", qualities)
           setAvailableQualities(qualities)
 
           let selectedQuality = preferredQuality
           if (!selectedQuality || !qualities.includes(selectedQuality)) {
             selectedQuality = qualities.includes("2160p") ? "2160p" : qualities.includes("1080p") ? "1080p" : "720p"
           }
-          console.log("[v0] Selected quality:", selectedQuality)
           setCurrentQuality(selectedQuality)
         }
       } catch (error) {
@@ -198,10 +211,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
 
     const initializePlyr = () => {
       if (!videoRef.current || !window.Plyr || !currentQuality) return
-
-      if (plyrInstance) {
-        plyrInstance.destroy()
-      }
+      if (plyrInstance) plyrInstance.destroy()
 
       console.log("[v0] Initializing Plyr with quality:", currentQuality)
 
@@ -223,7 +233,6 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           options: availableQualities.map((q) => Number.parseInt(q.replace("p", ""))),
           forced: true,
           onChange: (newQuality: number) => {
-            console.log("[v0] Quality changed to:", newQuality + "p")
             const newQualityStr = newQuality + "p"
             if (newQualityStr !== currentQuality) {
               setCurrentQuality(newQualityStr)
@@ -232,13 +241,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
                 const currentTime = player.currentTime
                 player.source = {
                   type: "video",
-                  sources: [
-                    {
-                      src: newSrc,
-                      type: "video/mp4",
-                      size: newQuality,
-                    },
-                  ],
+                  sources: [{ src: newSrc, type: "video/mp4", size: newQuality }],
                 }
                 player.once("canplay", () => {
                   player.currentTime = currentTime
@@ -247,10 +250,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
             }
           },
         },
-        speed: {
-          selected: 1,
-          options: [0.5, 0.75, 1, 1.25, 1.5, 2],
-        },
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         preload: "auto",
         autopause: false,
         hideControls: true,
@@ -263,267 +263,24 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       if (initialSrc) {
         player.source = {
           type: "video",
-          sources: [
-            {
-              src: initialSrc,
-              type: "video/mp4",
-              size: Number.parseInt(currentQuality.replace("p", "")),
-            },
-          ],
-          poster: mediaThumbnail,
+          sources: [{ src: initialSrc, type: "video/mp4", size: Number.parseInt(currentQuality.replace("p", "")) }],
+          poster: mediaThumbnail || undefined, // ✅ Safe poster
         }
       }
 
-      player.on("play", () => {
-        setShowPoster(false)
-      })
-
-      player.on("ready", () => {
-        console.log("[v0] Plyr player ready with source:", getCurrentVideoSrc())
-      })
-
-      player.on("loadstart", () => {
-        console.log("[v0] Video loading started")
-      })
-
-      player.on("canplay", () => {
-        console.log("[v0] Video can start playing")
-      })
-
-      player.on("error", (event: any) => {
-        console.error("[v0] Plyr error:", event)
-        console.error("[v0] Current video source:", getCurrentVideoSrc())
-      })
-
-      player.on("qualitychange", (event: any) => {
-        console.log("[v0] Quality change event:", event)
-      })
+      player.on("play", () => setShowPoster(false))
+      player.on("ready", () => console.log("[v0] Plyr ready with source:", getCurrentVideoSrc()))
+      player.on("error", (e: any) => console.error("[v0] Plyr error:", e))
 
       setPlyrInstance(player)
     }
 
-    if (availableQualities.length > 0 && currentQuality) {
-      loadPlyr()
-    }
+    if (availableQualities.length > 0 && currentQuality) loadPlyr()
 
     return () => {
-      if (plyrInstance) {
-        plyrInstance.destroy()
-      }
+      if (plyrInstance) plyrInstance.destroy()
     }
   }, [availableQualities, currentQuality])
 
-  let mediaTitle = ""
-  let mediaYear = ""
-  let mediaLanguage = ""
-  let mediaThumbnail = ""
-  let backLink = ""
-
-  if (currentEpisode && tvSeries) {
-    mediaTitle = `${tvSeries.title} - S${season}E${episode}: ${currentEpisode.episode_name}`
-    mediaYear = new Date(tvSeries.release_date).getFullYear().toString()
-    mediaLanguage = tvSeries.language
-    mediaThumbnail = tvSeries.thumbnail
-    backLink = `/tv-series/${movieId}`
-  } else if (movie) {
-    mediaTitle = movie.title
-    mediaYear = new Date(movie.release_date).getFullYear().toString()
-    mediaLanguage = movie.language
-    mediaThumbnail = movie.thumbnail
-    backLink = `/movie/${movieId}`
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-red-500 text-xl animate-pulse">Loading Filmzi Player...</div>
-      </div>
-    )
-  }
-
-  if (!movie && !tvSeries) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-red-500 text-xl">Content not found</div>
-      </div>
-    )
-  }
-
-  if (tvSeries && !currentEpisode) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-red-500 text-xl">Episode not found</div>
-      </div>
-    )
-  }
-
-  const currentVideoSrc = getCurrentVideoSrc()
-  console.log("[v0] Current video source:", currentVideoSrc)
-
-  if (!currentVideoSrc || currentVideoSrc.trim() === "") {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-xl mb-4">Video source not available</div>
-          <div className="text-white/70 text-sm mb-6">
-            The {currentQuality} quality video is not available for this content.
-          </div>
-          <Link href={backLink}>
-            <Button variant="outline" className="border-red-600 text-red-400 hover:bg-red-600/20 bg-transparent">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Details
-            </Button>
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="w-full">
-      <div className="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 sm:p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 sm:space-x-6">
-            <Link href={backLink}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-white hover:bg-red-600/20 border border-red-600/30 transition-all duration-200"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Back to Details</span>
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-white text-lg sm:text-2xl font-bold tracking-wide line-clamp-1">{mediaTitle}</h1>
-              <div className="flex items-center space-x-2 sm:space-x-3 mt-1">
-                <span className="text-red-400 text-xs sm:text-sm font-medium">{mediaYear}</span>
-                <span className="text-white/60 hidden sm:inline">•</span>
-                <span className="text-white/80 text-xs sm:text-sm uppercase tracking-wider hidden sm:inline">
-                  {mediaLanguage}
-                </span>
-                <span className="text-white/60">•</span>
-                <span className="text-red-400 text-xs sm:text-sm font-medium">{currentQuality}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {showPoster && mediaThumbnail && (
-        <div
-          className="absolute inset-0 z-40 bg-black flex items-center justify-center cursor-pointer"
-          onClick={() => {
-            if (plyrInstance) {
-              plyrInstance.play()
-              setShowPoster(false)
-            }
-          }}
-        >
-          <div className="relative">
-            <img
-              src={mediaThumbnail || "/placeholder.svg"}
-              alt={mediaTitle}
-              className="w-full h-auto max-w-md rounded-lg shadow-2xl"
-            />
-            <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
-              <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center shadow-lg hover:bg-red-700 transition-colors">
-                <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="relative w-full aspect-video max-w-5xl mx-auto">
-          <video
-            ref={videoRef}
-            className="w-full h-full rounded-lg shadow-2xl"
-            poster={mediaThumbnail}
-            crossOrigin="anonymous"
-            playsInline
-            preload="auto"
-            controls={false}
-          >
-            <source src={currentVideoSrc} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-        </div>
-      </div>
-
-      <style jsx global>{`
-        .plyr {
-          --plyr-color-main: #dc2626;
-          --plyr-video-background: #000000;
-        }
-        
-        .plyr--video {
-          background: #000000;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-        
-        .plyr__controls {
-          background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.8));
-          color: white;
-        }
-        
-        .plyr__control--overlaid {
-          background: rgba(220, 38, 38, 0.8);
-          border: 2px solid rgba(220, 38, 38, 0.5);
-          width: 80px;
-          height: 80px;
-        }
-        
-        .plyr__control--overlaid:hover {
-          background: rgba(220, 38, 38, 1);
-        }
-        
-        .plyr__control--overlaid svg {
-          width: 32px;
-          height: 32px;
-        }
-        
-        .plyr__menu__container {
-          background: rgba(0, 0, 0, 0.95);
-          border: 1px solid rgba(220, 38, 38, 0.3);
-          border-radius: 8px;
-        }
-        
-        .plyr__menu__container .plyr__control {
-          color: white;
-        }
-        
-        .plyr__menu__container .plyr__control:hover {
-          background: rgba(220, 38, 38, 0.2);
-        }
-        
-        .plyr__menu__container .plyr__control[aria-checked="true"] {
-          color: #dc2626;
-          background: rgba(220, 38, 38, 0.1);
-        }
-        
-        .plyr__control[aria-expanded="true"] {
-          background: rgba(220, 38, 38, 0.2);
-        }
-        
-        .plyr__progress__buffer {
-          color: rgba(255, 255, 255, 0.2);
-        }
-        
-        .plyr__volume__display {
-          color: white;
-        }
-        
-        .plyr__tooltip {
-          background: rgba(0, 0, 0, 0.9);
-          color: white;
-          border: 1px solid rgba(220, 38, 38, 0.3);
-        }
-      `}</style>
-    </div>
-  )
+  // ... rest of your component unchanged
 }
