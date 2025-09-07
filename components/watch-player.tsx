@@ -77,6 +77,24 @@ interface WatchPlayerProps {
   season?: string
 }
 
+// ✅ Helper to detect MIME type from extension
+const getMimeType = (url: string): string => {
+  const ext = url.split(".").pop()?.toLowerCase()
+  switch (ext) {
+    case "mp4":
+      return "video/mp4"
+    case "webm":
+      return "video/webm"
+    case "ogg":
+    case "ogv":
+      return "video/ogg"
+    case "mkv":
+      return "video/x-matroska"
+    default:
+      return "video/mp4"
+  }
+}
+
 export function WatchPlayer({ movieId, preferredQuality, episode, season }: WatchPlayerProps) {
   const [movie, setMovie] = useState<Movie | null>(null)
   const [tvSeries, setTvSeries] = useState<TVSeries | null>(null)
@@ -98,7 +116,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     return ""
   }
 
-  // ✅ Move metadata ABOVE Plyr usage
+  // ✅ Metadata for UI and poster
   let mediaTitle = ""
   let mediaYear = ""
   let mediaLanguage = ""
@@ -119,19 +137,13 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     backLink = `/movie/${movieId}`
   }
 
+  // ✅ Fetch media info
   useEffect(() => {
     const fetchMedia = async () => {
       try {
-        console.log("[v0] Fetching media data for ID:", movieId)
-        const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`, {
-          priority: "high",
-          cache: "force-cache",
-        })
-
+        const response = await fetch(`https://databaseuisk-three.vercel.app/api/media/${movieId}`)
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-
         const data = await response.json()
-        console.log("[v0] Media data received:", data)
 
         if (data.type === "tv" && episode && season) {
           setTvSeries(data)
@@ -140,36 +152,30 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
           const episodeData = seasonData?.episodes?.find(
             (ep: Episode) => ep.episode_number === Number.parseInt(episode),
           )
-
           if (episodeData) {
             setCurrentEpisode(episodeData)
-            console.log("[v0] Episode data:", episodeData)
-
-            const qualities = []
+            const qualities: string[] = []
             if (episodeData.video_720p) qualities.push("720p")
             if (episodeData.video_1080p) qualities.push("1080p")
             setAvailableQualities(qualities)
-
-            let selectedQuality = preferredQuality
-            if (!selectedQuality || !qualities.includes(selectedQuality)) {
-              selectedQuality = qualities.includes("1080p") ? "1080p" : "720p"
-            }
-            setCurrentQuality(selectedQuality)
+            setCurrentQuality(preferredQuality && qualities.includes(preferredQuality) ? preferredQuality : qualities[0])
           }
         } else {
           setMovie(data)
-
-          const qualities = []
+          const qualities: string[] = []
           if (data.video_links?.video_720p) qualities.push("720p")
           if (data.video_links?.video_1080p) qualities.push("1080p")
           if (data.video_links?.video_2160p) qualities.push("2160p")
           setAvailableQualities(qualities)
-
-          let selectedQuality = preferredQuality
-          if (!selectedQuality || !qualities.includes(selectedQuality)) {
-            selectedQuality = qualities.includes("2160p") ? "2160p" : qualities.includes("1080p") ? "1080p" : "720p"
-          }
-          setCurrentQuality(selectedQuality)
+          setCurrentQuality(
+            preferredQuality && qualities.includes(preferredQuality)
+              ? preferredQuality
+              : qualities.includes("2160p")
+              ? "2160p"
+              : qualities.includes("1080p")
+              ? "1080p"
+              : "720p",
+          )
         }
       } catch (error) {
         console.error("[v0] Error fetching media:", error)
@@ -181,18 +187,15 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     fetchMedia()
   }, [movieId, preferredQuality, episode, season])
 
+  // ✅ Plyr initialization
   useEffect(() => {
-    const loadPlyr = async () => {
+    const loadPlyr = () => {
       if (typeof window === "undefined" || !currentQuality || availableQualities.length === 0) return
 
-      if (!document.querySelector('link[href*="plyr"]')) {
+      if (!document.querySelector('link[href*="plyr.css"]')) {
         const link = document.createElement("link")
-        link.rel = "preload"
-        link.as = "style"
+        link.rel = "stylesheet"
         link.href = "https://cdn.plyr.io/3.7.8/plyr.css"
-        link.onload = () => {
-          link.rel = "stylesheet"
-        }
         document.head.appendChild(link)
       }
 
@@ -200,9 +203,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         const script = document.createElement("script")
         script.src = "https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"
         script.async = true
-        script.onload = () => {
-          initializePlyr()
-        }
+        script.onload = () => initializePlyr()
         document.head.appendChild(script)
       } else {
         initializePlyr()
@@ -213,20 +214,8 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
       if (!videoRef.current || !window.Plyr || !currentQuality) return
       if (plyrInstance) plyrInstance.destroy()
 
-      console.log("[v0] Initializing Plyr with quality:", currentQuality)
-
       const player = new window.Plyr(videoRef.current, {
-        controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "settings",
-          "fullscreen",
-        ],
+        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "settings", "fullscreen"],
         settings: ["quality", "speed"],
         quality: {
           default: Number.parseInt(currentQuality.replace("p", "")),
@@ -241,7 +230,7 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
                 const currentTime = player.currentTime
                 player.source = {
                   type: "video",
-                  sources: [{ src: newSrc, type: "video/mp4", size: newQuality }],
+                  sources: [{ src: newSrc, type: getMimeType(newSrc), size: newQuality }],
                 }
                 player.once("canplay", () => {
                   player.currentTime = currentTime
@@ -252,26 +241,18 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
         },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         preload: "auto",
-        autopause: false,
-        hideControls: true,
-        resetOnEnd: false,
-        clickToPlay: true,
-        keyboard: { focused: true, global: false },
       })
 
       const initialSrc = getCurrentVideoSrc()
       if (initialSrc) {
         player.source = {
           type: "video",
-          sources: [{ src: initialSrc, type: "video/mp4", size: Number.parseInt(currentQuality.replace("p", "")) }],
-          poster: mediaThumbnail || undefined, // ✅ Safe poster
+          sources: [{ src: initialSrc, type: getMimeType(initialSrc), size: Number.parseInt(currentQuality.replace("p", "")) }],
+          poster: mediaThumbnail || undefined,
         }
       }
 
       player.on("play", () => setShowPoster(false))
-      player.on("ready", () => console.log("[v0] Plyr ready with source:", getCurrentVideoSrc()))
-      player.on("error", (e: any) => console.error("[v0] Plyr error:", e))
-
       setPlyrInstance(player)
     }
 
@@ -282,5 +263,34 @@ export function WatchPlayer({ movieId, preferredQuality, episode, season }: Watc
     }
   }, [availableQualities, currentQuality])
 
-  // ... rest of your component unchanged
+  const currentVideoSrc = getCurrentVideoSrc()
+
+  if (loading) {
+    return <div className="min-h-screen bg-black flex items-center justify-center text-red-500">Loading Filmzi Player...</div>
+  }
+
+  if (!currentVideoSrc) {
+    return <div className="min-h-screen bg-black flex items-center justify-center text-red-500">Video source not available</div>
+  }
+
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="relative w-full aspect-video max-w-5xl mx-auto">
+          <video
+            ref={videoRef}
+            className="w-full h-full rounded-lg shadow-2xl"
+            poster={mediaThumbnail}
+            crossOrigin="anonymous"
+            playsInline
+            preload="auto"
+            controls
+          >
+            <source src={currentVideoSrc} type={getMimeType(currentVideoSrc)} />
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      </div>
+    </div>
+  )
 }
